@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Restoran - Admin Dashboard</title>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+
+    <!-- Bootstrap CSS -->
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Custom Stylesheet -->
+    <link href="/css/style.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f1f8ff; 
+            font-family: 'Nunito', sans-serif;
+        }
+
+        .header-bar {
+            background-color: #0F172B;
+            color: white;
+            padding: 15px 0;
+            margin-bottom: 30px;
+        }
+
+        .table thead {
+            background-color: #FEA116;
+            color: white;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.2rem;
+            color: #FEA116;
+        }
+        .status-confirmed { color: green; font-weight: bold; }
+        .status-pending { color: orange; font-weight: bold; }
+        .status-cancelled { color: red; font-weight: bold; }
+    </style>
+</head>
+
+<body>
+    <div class="header-bar">
+        <div class="container d-flex justify-content-between align-items-center">
+            <h3 class="m-0">Restaurant Admin Dashboard</h3>
+            <a href="/logout" class="btn btn-sm btn-primary">Logout</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <h1 class="mb-4 text-center" style="color: #0F172B;">All Table Bookings</h1>
+        
+        <div id="bookingTableContainer">
+            <!-- Loading Message -->
+            <div id="loading" class="loading">Loading bookings data...</div>
+            
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped table-hover" id="bookingsTable" style="display:none;">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Date & Time</th>
+                            <th>People</th>
+                            <th>Status</th> 
+                            <th>Action</th> <!-- NEW: Action column for button -->
+                        </tr>
+                    </thead>
+                    <tbody id="bookingsBody">
+                        <!-- Data will be inserted here by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- No Data Message -->
+            <div id="noData" class="loading" style="display:none;">Abhi koi bookings nahi hai.</div>
+        </div>
+    </div>
+
+    <!-- JavaScript for Data Fetching -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const bookingsTable = document.getElementById('bookingsTable');
+            const bookingsBody = document.getElementById('bookingsBody');
+            const loading = document.getElementById('loading');
+            const noData = document.getElementById('noData');
+
+            function formatDate(dateString) {
+                const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+                return new Date(dateString).toLocaleTimeString('en-US', options);
+            }
+            
+            function getStatusClass(status) {
+                if (status === 'Confirmed') return 'status-confirmed';
+                if (status === 'Cancelled') return 'status-cancelled';
+                return 'status-pending';
+            }
+
+            function fetchBookings() {
+                loading.style.display = 'block';
+                bookingsTable.style.display = 'none';
+                bookingsBody.innerHTML = '';
+                noData.style.display = 'none';
+
+                fetch('/admin/bookings-data')
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Failed to fetch data from server.');
+                        }
+                        return response.json();
+                    })
+                    .then(result => {
+                        loading.style.display = 'none';
+
+                        if (result.success && result.data.length > 0) {
+                            bookingsTable.style.display = 'table';
+                            
+                            result.data.forEach((booking, index) => {
+                                const row = bookingsBody.insertRow();
+                                
+                                row.insertCell(0).textContent = index + 1;
+                                row.insertCell(1).textContent = booking.name;
+                                row.insertCell(2).textContent = booking.email;
+                                row.insertCell(3).textContent = formatDate(booking.datetime);
+                                row.insertCell(4).textContent = booking.people;
+                                
+                                // Status Cell
+                                const statusCell = row.insertCell(5);
+                                statusCell.innerHTML = `<span class="${getStatusClass(booking.status)}">${booking.status}</span>`;
+                                
+                                // Action Cell
+                                const actionCell = row.insertCell(6);
+                                if (booking.status === 'Pending') {
+                                    actionCell.innerHTML = `
+                                        <button class="btn btn-sm btn-success confirm-btn" data-id="${booking._id}">Confirm</button>
+                                        <button class="btn btn-sm btn-danger cancel-btn" data-id="${booking._id}">Cancel</button>
+                                    `;
+                                } else {
+                                    actionCell.textContent = 'Done';
+                                }
+                            });
+                            attachEventListeners();
+                        } else {
+                            noData.style.display = 'block';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error in Admin Dashboard:', error);
+                        loading.textContent = '❌ Data load karne mein error: ' + error.message;
+                        loading.style.color = 'red';
+                    });
+            }
+
+            // Function to handle status update
+            function handleStatusUpdate(bookingId, newStatus) {
+                if (!confirm(`Kya aap is booking ko ${newStatus} karna chahte hain?`)) {
+                    return;
+                }
+
+                fetch('/admin/update-status', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ bookingId, newStatus })
+                })
+                .then(res => res.json())
+                .then(result => {
+                    if (result.success) {
+                        alert(result.message);
+                        fetchBookings(); // Data ko refresh karein
+                    } else {
+                        alert('Status update fail ho gaya: ' + result.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Update error:', error);
+                    alert('Status update ke dauran Server Error aaya.');
+                });
+            }
+
+            // Attach listeners to buttons
+            function attachEventListeners() {
+                document.querySelectorAll('.confirm-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        handleStatusUpdate(this.getAttribute('data-id'), 'Confirmed');
+                    });
+                });
+                
+                document.querySelectorAll('.cancel-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        handleStatusUpdate(this.getAttribute('data-id'), 'Cancelled');
+                    });
+                });
+            }
+
+            fetchBookings(); // Page load hone par data fetch karein
+        });
+    </script>
+</body>
+
+</html>
